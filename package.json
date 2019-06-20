@@ -1,0 +1,23 @@
+{
+  "name": "homebridge-esp8266leds",
+  "version": "0.0.0",
+  "description": "Homebridge plugin to control LEDS with this firmware https://github.com/rvt/esp8266leds",
+  "main": "index.js",
+  "scripts": {
+    "start": "echo \"Error: configure and run homebridge to start\" && exit 1",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "esp8266leds"
+  ],
+  "dependencies": {
+    "mqtt": "^1.6.3"
+  },
+  "engines": {
+    "homebridge": ">=0.2.0",
+    "node": ">4.0.0"
+  },
+  "author": "R. van Twisk",
+  "license": "GPL2"
+}
