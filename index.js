@@ -5,9 +5,10 @@ var mqtt = require("mqtt");
 
 
 function esp8266ledsAccessory(log, config) {
-  	this.log          	= log;
-  	this.name 			= config["name"];
-  	this.url 			= config["url"];
+	var that = this;
+  this.log          	= log;
+  this.name 			= config["name"];
+  this.url 			= config["url"];
 	this.client_Id 		= 'mqttjs_' + Math.random().toString(16).substr(2, 8);
 	this.options = {
 	    keepalive: 10,
@@ -36,60 +37,62 @@ function esp8266ledsAccessory(log, config) {
   this.saturation = 0;
 
 	this.service = new Service.Lightbulb(this.name);
-  	this.service
-      .getCharacteristic(Characteristic.On)
-    	.on('get', this.getStatus.bind(this))
-    	.on('set', this.setStatus.bind(this));
-    this.service
-      .getCharacteristic(Characteristic.Brightness)
-    	.on('get', this.getBrightness.bind(this))
-    	.on('set', this.setBrightness.bind(this));
-    this.service
-      .getCharacteristic(Characteristic.Hue)
-    	.on('get', this.getHue.bind(this))
-    	.on('set', this.setHue.bind(this));
-    this.service
-      .getCharacteristic(Characteristic.Saturation)
-    	.on('get', this.getSaturation.bind(this))
-    	.on('set', this.setSaturation.bind(this));
+	this.service
+		.getCharacteristic(Characteristic.On)
+		.on('get', this.getStatus.bind(this))
+		.on('set', this.setStatus.bind(this));
+	this.service
+		.getCharacteristic(Characteristic.Brightness)
+		.on('get', this.getBrightness.bind(this))
+		.on('set', this.setBrightness.bind(this));
+	this.service
+		.getCharacteristic(Characteristic.Hue)
+		.on('get', this.getHue.bind(this))
+		.on('set', this.setHue.bind(this));
+	this.service
+		.getCharacteristic(Characteristic.Saturation)
+		.on('get', this.getSaturation.bind(this))
+		.on('set', this.setSaturation.bind(this));
 
 	// connect to MQTT broker
 	this.client = mqtt.connect(this.url, this.options);
-	var that = this;
 	this.client.on('error', function (err) {
 		that.log('Error event on MQTT:', err);
 	});
 
 	this.client.on('message', function (topic, message) {
-    // console.log(message.toString(), topic);
+		var strMessage = message.toString();
 
-		if (topic == that.baseTopic + "/state") {
-			var status = message.toString();
-			var isOn = status.includes("ON");
-			var isOff = status.includes("OFF");
+		if (topic === that.baseTopic + "/color/state") {
+			var isOn = strMessage.includes("ON");
+			var isOff = strMessage.includes("OFF");
 
 			// Handle on/off
 			if (isOn || isOff) {
 				that.on = isOn === true?true: (isOff === true?false:true);
 				that.service.getCharacteristic(Characteristic.On).setValue(that.on, undefined, 'fromSetValue');
+				that.log(topic, "got state:" + that.on);
 			}
 
 			// handle hsb
 			var regex = /(hsb=)([,.\d]+)/;
-			if (hsbString = regex.exec(message.toLowerCase()) !== null) {
-					hsbw1w2 = hsbString[2].split(',');
-					hsb=hsbw1w2.slice(0,3);
+			var hsbString;
+			if ((hsbString = regex.exec(strMessage)) !== null) {
+
+					var hsbw1w2 = hsbString[2].split(',');
+					var hsb=hsbw1w2.slice(0,3);
 					that.hue = hsb[0];		
 					that.brightness = hsb[2];		
 					that.saturation = hsb[1];
 					that.service.getCharacteristic(Characteristic.Hue).setValue(that.hue, undefined, 'fromSetValue');
 					that.service.getCharacteristic(Characteristic.Saturation).setValue(that.saturation, undefined, 'fromSetValue');		
 					that.service.getCharacteristic(Characteristic.Brightness).setValue(that.brightness, undefined, 'fromSetValue');
+					that.log(topic, "got color h:" + that.hue + " s:" + that.saturation + " b:"+that.brightness);
 			}
 		}
 
 	});
-  this.client.subscribe(this.baseTopic + "/state");
+  this.client.subscribe(this.baseTopic + "/color/state");
 }
 
 module.exports = function(homebridge) {
