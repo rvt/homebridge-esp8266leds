@@ -21,8 +21,8 @@ function esp8266ledsAccessory(log, config) {
 		will: {
 			topic: 'WillMsg',
 			payload: 'Connection Closed abnormally..!',
-			qos: 0,
-			retain: false
+			qos: 2,
+			retain: true
 		},
 	    username: config["username"],
 	    password: config["password"],
@@ -66,12 +66,13 @@ function esp8266ledsAccessory(log, config) {
 		if (topic === that.baseTopic + "/color/state") {
 			var isOn = strMessage.includes("ON");
 			var isOff = strMessage.includes("OFF");
+			that.log(topic, "Received from MQTT:" + strMessage);
 
 			// Handle on/off
 			if (isOn || isOff) {
 				that.on = isOn === true?true: (isOff === true?false:true);
 				that.service.getCharacteristic(Characteristic.On).setValue(that.on, undefined, 'fromSetValue');
-				that.log(topic, "got state:" + that.on);
+				that.log(topic, "power:"+that.on);
 			}
 
 			// handle hsb
@@ -87,7 +88,7 @@ function esp8266ledsAccessory(log, config) {
 					that.service.getCharacteristic(Characteristic.Hue).setValue(that.hue, undefined, 'fromSetValue');
 					that.service.getCharacteristic(Characteristic.Saturation).setValue(that.saturation, undefined, 'fromSetValue');		
 					that.service.getCharacteristic(Characteristic.Brightness).setValue(that.brightness, undefined, 'fromSetValue');
-					that.log(topic, "got color h:" + that.hue + " s:" + that.saturation + " b:"+that.brightness);
+					that.log(topic, "Color h:" + that.hue + " s:" + that.saturation + " b:"+that.brightness);
 			}
 		}
 
