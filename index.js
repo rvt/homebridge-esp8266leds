@@ -6,35 +6,40 @@ var mqtt = require("mqtt");
 
 function esp8266ledsAccessory(log, config) {
 	var that = this;
-  this.log          	= log;
-  this.name 			= config["name"];
-  this.url 			= config["url"];
+	this.log          	= log;
+	this.name 			= config["name"];
+	this.url 			= config["url"];
 	this.client_Id 		= 'mqttjs_' + Math.random().toString(16).substr(2, 8);
 	this.options = {
-	    keepalive: 10,
-    	clientId: this.client_Id,
-	    protocolId: 'MQTT',
-    	protocolVersion: 4,
-    	clean: true,
-    	reconnectPeriod: 1000,
-    	connectTimeout: 30 * 1000,
+		keepalive: 10,
+		clientId: this.client_Id,
+		protocolId: 'MQTT',
+		protocolVersion: 4,
+		clean: true,
+		reconnectPeriod: 1000,
+		connectTimeout: 30 * 1000,
 		will: {
 			topic: 'WillMsg',
 			payload: 'Connection Closed abnormally..!',
 			qos: 2,
 			retain: true
 		},
-	    username: config["username"],
-	    password: config["password"],
-    	rejectUnauthorized: false
+		username: config["username"],
+		password: config["password"],
+		rejectUnauthorized: false
 	};
-	this.caption		= config["caption"];
-  this.topics = config["topics"];
-  this.baseTopic = config["baseTopic"];
-	this.on = false;
-  this.brightness = 0;
-  this.hue = 0;
-  this.saturation = 0;
+	this.caption = config["caption"];
+	this.baseTopic = config["baseTopic"];
+	
+	// Local state of current values
+	this.currentHsb = {
+		on:false,
+		brightness:0,
+		hue:0,
+		saturation:0
+	}
+
+	this.mqttTimeout = setTimeout( () => {}, 1);
 
 	this.service = new Service.Lightbulb(this.name);
 	this.service
@@ -70,9 +75,9 @@ function esp8266ledsAccessory(log, config) {
 
 			// Handle on/off
 			if (isOn || isOff) {
-				that.on = isOn === true?true: (isOff === true?false:true);
-				that.service.getCharacteristic(Characteristic.On).setValue(that.on, undefined, 'fromSetValue');
-				that.log(topic, "power:"+that.on);
+				that.currentHsb.on = isOn === true?true: (isOff === true?false:true);
+				that.service.getCharacteristic(Characteristic.On).setValue(that.currentHsb.on, undefined, 'fromSetValue');
+				//that.log(topic, "power:"+that.currentHsb.on);
 			}
 
 			// handle hsb
@@ -82,18 +87,31 @@ function esp8266ledsAccessory(log, config) {
 
 					var hsbw1w2 = hsbString[2].split(',');
 					var hsb=hsbw1w2.slice(0,3);
-					that.hue = hsb[0];		
-					that.brightness = hsb[2];		
-					that.saturation = hsb[1];
-					that.service.getCharacteristic(Characteristic.Hue).setValue(that.hue, undefined, 'fromSetValue');
-					that.service.getCharacteristic(Characteristic.Saturation).setValue(that.saturation, undefined, 'fromSetValue');		
-					that.service.getCharacteristic(Characteristic.Brightness).setValue(that.brightness, undefined, 'fromSetValue');
-					that.log(topic, "Color h:" + that.hue + " s:" + that.saturation + " b:"+that.brightness);
+					that.currentHsb.hue = hsb[0];		
+					that.currentHsb.brightness = hsb[2];		
+					that.currentHsb.saturation = hsb[1];
+					that.service.getCharacteristic(Characteristic.Hue).setValue(that.currentHsb.hue, undefined, 'fromSetValue');
+					that.service.getCharacteristic(Characteristic.Saturation).setValue(that.currentHsb.saturation, undefined, 'fromSetValue');		
+					that.service.getCharacteristic(Characteristic.Brightness).setValue(that.currentHsb.brightness, undefined, 'fromSetValue');
+					//that.log(topic, "Color h:" + that.currentHsb.hue + " s:" + that.currentHsb.saturation + " b:"+that.currentHsb.brightness);
 			}
 		}
 
 	});
-  this.client.subscribe(this.baseTopic + "/color/state");
+
+	this.publishToMqtt = function() {
+		clearInterval(that.mqttTimeout);
+		setTimeout( () => {
+			var mqttMessage = "hsb=" + that.currentHsb.hue+","+that.currentHsb.saturation+","+that.currentHsb.brightness+" "+ (that.currentHsb.on?"ON":"OFF");
+			if (mqttMessage !== that.lastMqttMessage) {
+				that.log("Sending:",that.baseTopic+"/color " + mqttMessage);
+				that.client.publish(that.baseTopic+"/color", mqttMessage);
+				that.lastMqttMessage = mqttMessage;
+			}
+		}, 25);
+	}
+
+	this.client.subscribe(this.baseTopic + "/color/state");
 }
 
 module.exports = function(homebridge) {
@@ -104,52 +122,49 @@ module.exports = function(homebridge) {
 }
 
 esp8266ledsAccessory.prototype.getStatus = function(callback) {
-    callback(null, this.on);
+    callback(null, this.currentHsb.on);
 }
 
 esp8266ledsAccessory.prototype.setStatus = function(status, callback, context) {
 	if(context !== 'fromSetValue') {
-		this.on = status;
-	  this.client.publish(this.baseTopic+"/color", status ? "ON" : "OFF");
+		this.currentHsb.on = status;
+		this.publishToMqtt();
 	}
 	callback();
 }
 
 esp8266ledsAccessory.prototype.getBrightness = function(callback) {
-    callback(null, this.brightness);
+    callback(null, this.currentHsb.brightness);
 }
 
 esp8266ledsAccessory.prototype.setBrightness = function(brightness, callback, context) {
 	if(context !== 'fromSetValue') {
-		this.brightness = brightness;
-    // console.log("Brightness:",this.brightness);
-		this.client.publish(this.baseTopic+"/color", "b=" + this.brightness.toString());
-	}
+		this.currentHsb.brightness = brightness;
+		this.publishToMqtt();
+}
 	callback();
 }
 
 esp8266ledsAccessory.prototype.getHue = function(callback) {
-    callback(null, this.hue);
+    callback(null, this.currentHsb.hue);
 }
 
 esp8266ledsAccessory.prototype.setHue = function(hue, callback, context) {
 	if(context !== 'fromSetValue') {
-		this.hue = hue;
-    // console.log("Hue:",this.hue);
-		this.client.publish(this.baseTopic+"/color", "h=" + this.hue.toString());
+		this.currentHsb.hue = hue;
+		this.publishToMqtt();
 	}
 	callback();
 }
 
 esp8266ledsAccessory.prototype.getSaturation = function(callback) {
-    callback(null, this.saturation);
+    callback(null, this.currentHsb.saturation);
 }
 
 esp8266ledsAccessory.prototype.setSaturation = function(saturation, callback, context) {
 	if(context !== 'fromSetValue') {
-		this.saturation = saturation;
-    // console.log("Saturation:",this.saturation);
-		this.client.publish(this.baseTopic+"/color", "s=" + this.saturation.toString());
+		this.currentHsb.saturation = saturation;
+		this.publishToMqtt();
 	}
 	callback();
 }
